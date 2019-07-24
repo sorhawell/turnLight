@@ -1,0 +1,150 @@
+/* #include <Arduino.h>
+#include <WiFi.h>
+
+int LEDs[] = {14,16,27};
+
+const char *ssid = "MyESP32AP";
+const char *password = "testpassword";
+ 
+int const LED_red   = 14;
+int const LED_green = 16;
+int const LED_blue  = 27;
+
+
+
+// the setup function runs once when you press reset or power the board
+void setup() {
+  Serial.begin(115200);
+
+  // initialize digital pin LED_BUILTIN as an output.
+  
+  for(int i : LEDs) pinMode(i,OUTPUT);
+  
+  //wifi stuff
+  WiFi.softAP(ssid, password);
+  Serial.println();
+  Serial.print("IP address: ");
+  Serial.println(WiFi.softAPIP());
+  
+  
+
+}
+
+// the loop function runs over and over again forever
+void loop() {
+  //for(int i : LEDs) digitalWrite(i,HIGH);
+  //for(int i : LEDs) digitalWrite(i,LOW);
+                         // wait for a second
+} */
+
+#include "WiFi.h"
+#include "AsyncUDP.h"
+
+const char * ssid = "fjerNet2";
+const char * password = "kaffekande";
+
+AsyncUDP udp;
+
+
+
+
+int LEDs[] = {14,16,27};
+int loop_ms;
+int blink_count;
+bool blink_state;
+bool master = false;    
+int slave_diff_ms = 0;
+int slave_diff_ms_2nd = 0;
+int master_time = 0;
+int slave_time = 0;
+int Error = 0;
+String packet_time = "";
+
+void setup()
+{
+    for(int i : LEDs) pinMode(i,OUTPUT);
+
+    Serial.begin(115200);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    if (WiFi.waitForConnectResult() != WL_CONNECTED) {
+        Serial.println("WiFi Failed");
+        while(1) {
+            delay(1000);
+        }
+    }
+    if(udp.listenMulticast(IPAddress(239,1,2,3), 1234)) {
+        Serial.print("UDP Listening on IP: ");
+        Serial.println(WiFi.localIP());
+        
+        udp.onPacket([](AsyncUDPPacket packet) {
+            if(!master) {
+              for(int i=0;i<packet.length();i++) packet_time =+ (char*)packet.data();
+              slave_time = millis();
+              master_time = packet_time.toInt();
+              Serial.print("exp mtime:");
+              Serial.print(slave_time+slave_diff_ms);
+              Serial.print(", now mtime:");
+              Serial.print(master_time);
+              Serial.print(", error:");
+              Error = slave_time+slave_diff_ms -  master_time;
+              Serial.print(Error);
+              Serial.print(", new diff:");
+              slave_diff_ms =  master_time - slave_time;
+              Serial.print(slave_diff_ms);
+              Serial.print("\n");
+            }
+
+            
+            //packet_time = packet.data();
+            
+            
+            //if(!master) slave_diff_ms = String.toInt(packet.data());
+            Serial.print("UDP PT: ");
+            Serial.print(packet.isBroadcast()?"Broadcast":packet.isMulticast()?"Multicast":"Unicast");
+            Serial.print(", F: ");
+            Serial.print(packet.remoteIP());
+            Serial.print(":");
+            Serial.print(packet.remotePort());
+            Serial.print(", T: ");
+            Serial.print(packet.localIP());
+            Serial.print(":");
+            Serial.print(packet.localPort());
+            Serial.print(", L: ");
+            Serial.print(packet.length());
+            Serial.print(", D: ");
+            Serial.write(packet.data(), packet.length());
+            Serial.println();
+            //reply to the client
+            //packet.printf("Got %u bytes of data", packet.length());
+        });
+        //Send multicast
+        //udp.print("Hello!");
+    }
+}
+
+    
+
+void loop()
+{
+    if(master) {
+      //imma slave on should know my masters time
+      loop_ms = millis();
+    } else {
+      loop_ms = millis()+slave_diff_ms;
+    }
+    
+    if(loop_ms >= blink_count * 3000) {
+      blink_count++;
+      blink_state = !blink_state;
+      if(blink_state) {
+        for(int i : LEDs) digitalWrite(i,HIGH);
+      } else {
+        for(int i : LEDs) digitalWrite(i,LOW);
+      }
+
+      if(master) udp.print(String(loop_ms));
+    }
+    //Send multicast
+    
+}
